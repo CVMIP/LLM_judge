@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM-as-a-Judge Evaluation Tool</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .tab-btn.active {
+            border-bottom: 2px solid #3b82f6;
+            color: #3b82f6;
+        }
+
+        .modal {
+            display: none;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-100 min-h-screen">
+    <!-- API Settings Modal -->
+    <div id="settingsModal" class="modal fixed inset-0 bg-black bg-opacity-50 z-[100] items-center justify-center">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold">API Key Settings</h2>
+                <button onclick="toggleSettings()" class="text-gray-500 hover:text-gray-700">&times;</button>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">OpenAI API Key</label>
+                    <input type="password" id="openai_key"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="sk-...">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Anthropic API Key</label>
+                    <input type="password" id="anthropic_key"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
+                        placeholder="sk-ant-...">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Google API Key</label>
+                    <input type="password" id="google_key"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border" placeholder="AIza...">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Local API Base URL (Ollama/vLLM)</label>
+                    <input type="text" id="api_base"
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
+                        placeholder="http://localhost:8000/v1">
+                </div>
+                <p class="text-xs text-gray-500 italic">* Keys are stored locally in your browser (localStorage).</p>
+                <button onclick="saveSettings()"
+                    class="w-full bg-blue-600 text-white font-bold py-2 rounded-lg hover:bg-blue-700 transition">Save
+                    Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
+        <header class="mb-10 flex justify-between items-start">
+            <div>
+                <h1 class="text-4xl font-bold text-gray-800">⚖️ LLM-as-a-Judge</h1>
+                <p class="text-gray-600">Evaluate LLM responses using another LLM as a judge.</p>
+            </div>
+            <button onclick="toggleSettings()"
+                class="bg-white p-2 rounded-full shadow-sm border hover:bg-gray-50 transition" title="Settings">
+                ⚙️
+            </button>
+        </header>
+
+        <!-- Tabs -->
+        <div class="flex border-b mb-6">
+            <button onclick="showTab('single')" id="tab-single" class="tab-btn active px-6 py-2 font-medium">Single
+                Evaluation</button>
+            <button onclick="showTab('pairwise')" id="tab-pairwise" class="tab-btn px-6 py-2 font-medium">Pairwise
+                Comparison</button>
+            <button onclick="showTab('batch')" id="tab-batch" class="tab-btn px-6 py-2 font-medium">Batch
+                Process</button>
+        </div>
+
+        <!-- Single Evaluation Tab -->
+        <div id="content-single" class="tab-content active space-y-6">
+            <div class="bg-white p-6 rounded-lg shadow-sm">
+                <form id="singleForm" class="space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Source Context / EMR Document
+                                (Optional)</label>
+                            <textarea name="context" rows="7"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-gray-50"
+                                placeholder="예: [응급실 기록] 환자는 50세 남성으로 가슴 통증을 호소하며 내원함...&#10;&#10;(Groundedness 검증의 근거가 될 원본 EMR 문서나 참고 텍스트를 입력하세요.)"></textarea>
+                        </div>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Prompt / Task</label>
+                                <textarea name="prompt" rows="2"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border"
+                                    placeholder="예: 제공된 의무기록을 바탕으로 환자의 퇴원 요약지를 작성해 줘.&#10;(LLM에게 지시했던 실제 프롬프트를 입력하세요.)"></textarea>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700">Target Response (Generated
+                                    Summary)</label>
+                                <textarea name="response" rows="3"
+                                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border lg:border-blue-200"
+                                    placeholder="예: 환자는 가슴 통증으로 내원하여 심전도 검사를 진행하였고...&#10;(평가할 LLM의 생성 결과를 입력하세요.)"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Reference Answer (Optional)</label>
+                        <textarea name="reference" rows="2"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
+                            placeholder="예: 흉통으로 응급실 내원, 심근경색 진단 하에 스텐트 시술... (평가의 기준이 될 임상 전문가의 정답이 있다면 입력하세요.)"></textarea>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Judge Model (Select Multiple for
+                                Ensemble)</label>
+                            <div class="space-y-1 mt-1 border rounded-md p-2 bg-gray-50">
+                                <label class="flex items-center"><input type="checkbox" name="model" value="gpt-4o"
+                                        class="mr-2" checked> GPT-4o</label>
+                                <label class="flex items-center"><input type="checkbox" name="model"
+                                        value="claude-3-5-sonnet-20240620" class="mr-2"> Claude 3.5 Sonnet</label>
+                                <label class="flex items-center"><input type="checkbox" name="model"
+                                        value="gemini-2.5-flash" class="mr-2"> Gemini 2.5 Flash</label>
+                                <label class="flex items-center"><input type="checkbox" name="model" value="local-vllm"
+                                        class="mr-2"> Local Model (vLLM)</label>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Rubric</label>
+                            <select name="rubric_name"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
+                                <option value="Helpfulness">Helpfulness</option>
+                                <option value="Safety">Safety</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit"
+                        class="w-full bg-blue-600 text-white font-bold py-2 rounded-lg hover:bg-blue-700 transition">Evaluate</button>
+                </form>
+            </div>
+            <div id="singleResult" class="hidden bg-white p-6 rounded-lg shadow-sm border-l-4 border-blue-500">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-bold" id="resCriterion">Criterion</h3>
+                    <div class="flex items-center gap-4">
+                        <div id="singleFeedback" class="flex items-center bg-gray-50 rounded-lg p-1 border">
+                            <button onclick="setFeedback('single', 'agree')" id="btnSingleAgree"
+                                class="text-xs px-2 py-1 rounded hover:bg-green-100 transition">👍 동의</button>
+                            <button onclick="setFeedback('single', 'disagree')" id="btnSingleDisagree"
+                                class="text-xs px-2 py-1 rounded hover:bg-red-100 transition">👎 비동의</button>
+                        </div>
+                        <span class="text-2xl font-bold text-blue-600" id="resScore">0/0</span>
+                    </div>
+                </div>
+                <div class="prose max-w-none text-gray-700 whitespace-pre-wrap mb-6" id="resReasoning"></div>
+
+                <!-- JSON Export Section -->
+                <div class="mt-6 pt-6 border-t border-gray-100">
+                    <button onclick="exportSingleJSON()"
+                        class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 py-1 px-3 rounded transition mb-3">
+                        📦 JSON으로 변환
+                    </button>
+                    <div id="singleJSONArea" class="hidden">
+                        <div class="space-y-2">
+                            <pre id="singleJSONText"
+                                class="bg-gray-800 text-green-400 p-4 rounded text-xs overflow-x-auto max-h-60"></pre>
+                            <div class="flex gap-2">
+                                <button onclick="copyToClipboard('singleJSONText')"
+                                    class="flex-1 bg-blue-600 text-white text-sm py-2 rounded hover:bg-blue-700 transition font-medium">
+                                    📋 JSON 복사
+                                </button>
+                                <button onclick="downloadJSON(currentSingleData, 'evaluation_single.json')"
+                                    class="flex-1 bg-green-600 text-white text-sm py-2 rounded hover:bg-green-700 transition font-medium">
+                                    📥 JSON 다운로드
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pairwise Comparison Tab -->
+        <div id="content-pairwise" class="tab-content space-y-6">
+            <div class="bg-white p-6 rounded-lg shadow-sm">
+                <form id="pairwiseForm" class="space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Source Context / EMR Document
+                                (Optional)</label>
+                            <textarea name="context" rows="3"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
+                                placeholder="예: [응급실 기록] 50세 남성, 가슴 통증 호소... (원본 EMR 문서를 입력하세요.)"></textarea>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Prompt / Task</label>
+                            <textarea name="prompt" rows="3"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
+                                placeholder="예: 이 의무기록을 바탕으로 퇴원 요약지를 작성해 줘. (지시했던 프롬프트를 입력하세요.)"></textarea>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Response A</label>
+                            <textarea name="response_a" rows="6"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
+                                placeholder="[모델 A의 답변] 환자는 가슴 통증으로 내원..."></textarea>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Response B</label>
+                            <textarea name="response_b" rows="6"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
+                                placeholder="[모델 B의 답변] 내원 당시 흉통을 호소하였으며..."></textarea>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Reference Answer (Optional)</label>
+                        <textarea name="reference" rows="2"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
+                            placeholder="예: 정답으로 간주할 의료진의 요약 텍스트를 입력하세요. (선택 사항)"></textarea>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Judge Model (Select Multiple for
+                                Ensemble)</label>
+                            <div class="space-y-1 mt-1 border rounded-md p-2 bg-gray-50">
+                                <label class="flex items-center"><input type="checkbox" name="model" value="gpt-4o"
+                                        class="mr-2" checked> GPT-4o</label>
+                                <label class="flex items-center"><input type="checkbox" name="model"
+                                        value="claude-3-5-sonnet-20240620" class="mr-2"> Claude 3.5 Sonnet</label>
+                                <label class="flex items-center"><input type="checkbox" name="model"
+                                        value="gemini-2.5-flash" class="mr-2"> Gemini 2.5 Flash</label>
+                                <label class="flex items-center"><input type="checkbox" name="model" value="local-vllm"
+                                        class="mr-2"> Local Model (vLLM)</label>
+                            </div>
+                        </div>
+                    </div>
+                    <button type="submit"
+                        class="w-full bg-indigo-600 text-white font-bold py-2 rounded-lg hover:bg-indigo-700 transition">Compare</button>
+                </form>
+            </div>
+            <div id="pairwiseResult" class="hidden bg-white p-6 rounded-lg shadow-sm border-l-4 border-indigo-500">
+                <div class="flex justify-between items-start mb-4">
+                    <div>
+                        <h3 class="text-xl font-bold mb-1">Winner: <span id="resWinner" class="text-indigo-600">?</span>
+                        </h3>
+                        <div class="flex gap-4 text-sm text-gray-500">
+                            <span>Response A Score: <b id="resScoreA">0</b></span>
+                            <span>Response B Score: <b id="resScoreB">0</b></span>
+                        </div>
+                    </div>
+                    <div id="pairwiseFeedback" class="flex items-center bg-gray-50 rounded-lg p-1 border">
+                        <button onclick="setFeedback('pairwise', 'agree')" id="btnPairwiseAgree"
+                            class="text-xs px-2 py-1 rounded hover:bg-green-100 transition">👍 동의</button>
+                        <button onclick="setFeedback('pairwise', 'disagree')" id="btnPairwiseDisagree"
+                            class="text-xs px-2 py-1 rounded hover:bg-red-100 transition">👎 비동의</button>
+                    </div>
+                </div>
+                <div class="prose max-w-none text-gray-700 whitespace-pre-wrap mb-6" id="resPairReasoning"></div>
+
+                <!-- JSON Export Section -->
+                <div class="mt-6 pt-6 border-t border-gray-100">
+                    <button onclick="exportPairwiseJSON()"
+                        class="text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 py-1 px-3 rounded transition mb-3">
+                        📦 JSON으로 변환
+                    </button>
+                    <div id="pairwiseJSONArea" class="hidden">
+                        <div class="space-y-2">
+                            <pre id="pairwiseJSONText"
+                                class="bg-gray-800 text-green-400 p-4 rounded text-xs overflow-x-auto max-h-60"></pre>
+                            <div class="flex gap-2">
+                                <button onclick="copyToClipboard('pairwiseJSONText')"
+                                    class="flex-1 bg-indigo-600 text-white text-sm py-2 rounded hover:bg-indigo-700 transition font-medium">
+                                    📋 JSON 복사
+                                </button>
+                                <button onclick="downloadJSON(currentPairwiseData, 'evaluation_pairwise.json')"
+                                    class="flex-1 bg-green-600 text-white text-sm py-2 rounded hover:bg-green-700 transition font-medium">
+                                    📥 JSON 다운로드
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Batch Process Tab -->
+        <div id="content-batch" class="tab-content space-y-6">
+            <div class="bg-white p-6 rounded-lg shadow-sm">
+                <p class="mb-4 text-sm text-gray-500">
+                    Upload a CSV or JSONL file with <b>'prompt'</b> and <b>'response'</b> columns.
+                    <br><span class="text-blue-600 font-medium">Tip:</span> You can also include an optional
+                    <b>'reference_answer'</b> column for better evaluation accuracy.
+                </p>
+                <form id="batchForm" class="space-y-4">
+                    <div class="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Judge Model (Batch Ensemble Not
+                                Supported Yet)</label>
+                            <div class="space-y-1 mt-1 border rounded-md p-2 bg-gray-50 text-sm">
+                                <label class="flex items-center"><input type="radio" name="model" value="gpt-4o"
+                                        class="mr-2" checked> GPT-4o</label>
+                                <label class="flex items-center"><input type="radio" name="model"
+                                        value="claude-3-5-sonnet-20240620" class="mr-2"> Claude 3.5 Sonnet</label>
+                                <label class="flex items-center"><input type="radio" name="model"
+                                        value="gemini-2.5-flash" class="mr-2"> Gemini 2.5 Flash</label>
+                                <label class="flex items-center"><input type="radio" name="model" value="local-vllm"
+                                        class="mr-2"> Local Model (vLLM)</label>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Rubric</label>
+                            <select name="rubric_name"
+                                class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border">
+                                <option value="Helpfulness">Helpfulness</option>
+                                <option value="Safety">Safety</option>
+                            </select>
+                        </div>
+                    </div>
+                    <input type="file" name="file" accept=".csv,.jsonl"
+                        class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+                    <button type="submit"
+                        class="w-full bg-green-600 text-white font-bold py-2 rounded-lg hover:bg-green-700 transition mt-4">Process
+                        Dataset</button>
+                </form>
+            </div>
+            <div id="batchResult" class="hidden bg-white p-6 rounded-lg shadow-sm">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-xl font-bold" id="batchMsg"></h3>
+                    <div class="flex gap-2">
+                        <button id="btnCopyBatch"
+                            class="bg-blue-600 hover:bg-blue-700 text-white text-sm py-2 px-4 rounded font-bold transition flex items-center">
+                            📋 JSON 복사
+                        </button>
+                        <button id="btnDownloadBatch"
+                            class="bg-green-600 hover:bg-green-700 text-white text-sm py-2 px-4 rounded font-bold transition flex items-center">
+                            📥 JSON 다운로드
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Stats Summary & Chart -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                    <div class="bg-blue-50 p-4 rounded-lg text-center">
+                        <p class="text-gray-500 text-sm">평균 점수</p>
+                        <p class="text-3xl font-bold text-blue-600" id="statAvg">0.0</p>
+                    </div>
+                    <div class="bg-indigo-50 p-4 rounded-lg text-center">
+                        <p class="text-gray-500 text-sm">평가 항목 수</p>
+                        <p class="text-3xl font-bold text-indigo-600" id="statTotal">0</p>
+                    </div>
+                    <div class="bg-gray-50 p-2 rounded-lg flex items-center justify-center h-32">
+                        <canvas id="batchChart"></canvas>
+                    </div>
+                </div>
+
+                <div id="batchTable" class="overflow-x-auto border rounded-lg"></div>
+            </div>
+        </div>
+
+        <!-- Loading Spinner -->
+        <div id="loading" class="hidden fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+            <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-600 bg-white p-4"></div>
+        </div>
+    </div>
+
+    <script>
+        function showTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('content-' + tabId).classList.add('active');
+            document.getElementById('tab-' + tabId).classList.add('active');
+        }
+
+        function toggleSettings() {
+            const modal = document.getElementById('settingsModal');
+            modal.classList.toggle('active');
+            if (modal.classList.contains('active')) {
+                document.getElementById('openai_key').value = localStorage.getItem('openai_key') || '';
+                document.getElementById('anthropic_key').value = localStorage.getItem('anthropic_key') || '';
+                document.getElementById('google_key').value = localStorage.getItem('google_key') || '';
+                document.getElementById('api_base').value = localStorage.getItem('api_base') || '';
+            }
+        }
+
+        function saveSettings() {
+            localStorage.setItem('openai_key', document.getElementById('openai_key').value);
+            localStorage.setItem('anthropic_key', document.getElementById('anthropic_key').value);
+            localStorage.setItem('google_key', document.getElementById('google_key').value);
+            localStorage.setItem('api_base', document.getElementById('api_base').value);
+            toggleSettings();
+            alert('Settings saved!');
+        }
+
+        function getApiKey(model) {
+            if (model.includes('gpt')) return localStorage.getItem('openai_key');
+            if (model.includes('claude')) return localStorage.getItem('anthropic_key');
+            if (model.includes('gemini')) return localStorage.getItem('google_key');
+            return null;
+        }
+
+        const loading = document.getElementById('loading');
+
+        async function postData(url, formData) {
+            loading.classList.remove('hidden');
+
+            const models = formData.getAll('model');
+            if (models.length > 0) {
+                formData.delete('model');
+                formData.append('model', models.join(','));
+            }
+
+            const modelStr = formData.get('model') || '';
+            const apiKey = getApiKey(modelStr.split(',')[0] || ''); // Best effort grab from first
+
+            const headers = {};
+            if (apiKey) headers['X-API-Key'] = apiKey;
+
+            const apiBase = localStorage.getItem('api_base');
+            if (apiBase) headers['X-API-Base'] = apiBase;
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: headers,
+                    body: formData
+                });
+                return await response.json();
+            } catch (err) {
+                alert('Error: ' + err.message);
+            } finally {
+                loading.classList.add('hidden');
+            }
+        }
+
+        // Global variables to store current results for JSON export
+        let currentSingleData = null;
+        let currentPairwiseData = null;
+        let currentBatchData = null;
+        let batchChart = null;
+
+        function setFeedback(type, value) {
+            const data = type === 'single' ? currentSingleData : currentPairwiseData;
+            if (!data) return;
+
+            data.human_feedback = value;
+            if (value === 'disagree') {
+                const reason = prompt("비동의 사유를 간단히 적어주세요 (선택):");
+                if (reason) data.human_feedback_reason = reason;
+            }
+
+            // Update UI
+            const agreeBtn = document.getElementById(`btn${type.charAt(0).toUpperCase() + type.slice(1)}Agree`);
+            const disagreeBtn = document.getElementById(`btn${type.charAt(0).toUpperCase() + type.slice(1)}Disagree`);
+
+            agreeBtn.className = value === 'agree' ? 'text-xs px-2 py-1 rounded bg-green-500 text-white font-bold' : 'text-xs px-2 py-1 rounded hover:bg-green-100 transition';
+            disagreeBtn.className = value === 'disagree' ? 'text-xs px-2 py-1 rounded bg-red-500 text-white font-bold' : 'text-xs px-2 py-1 rounded hover:bg-red-100 transition';
+
+            console.log(`${type} feedback set to: ${value}`);
+        }
+
+        function updateBatchStats(results) {
+            const total = results.length;
+            if (total === 0) return;
+
+            const type = results[0].type;
+            document.getElementById('statTotal').innerText = total;
+
+            if (batchChart) batchChart.destroy();
+            const ctx = document.getElementById('batchChart').getContext('2d');
+
+            if (type === 'absolute_scoring') {
+                const scores = results.map(r => r.result.score);
+                const avg = (scores.reduce((a, b) => a + b, 0) / total).toFixed(2);
+                document.getElementById('statAvg').innerText = avg;
+
+                const counts = {};
+                scores.forEach(s => counts[Math.floor(s)] = (counts[Math.floor(s)] || 0) + 1);
+                const labels = [1, 2, 3, 4, 5];
+                const data = labels.map(l => counts[l] || 0);
+
+                batchChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: '점수 분포',
+                            data: data,
+                            backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                            borderColor: 'rgb(59, 130, 246)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+                    }
+                });
+            } else {
+                // Pairwise Stats
+                const winners = results.map(r => r.result.winner);
+                const winA = winners.filter(w => w === 'A').length;
+                const winB = winners.filter(w => w === 'B').length;
+                const ties = winners.filter(w => w === 'Tie').length;
+
+                document.getElementById('statAvg').innerText = `${((winA / total) * 100).toFixed(0)}% (A Win)`;
+
+                batchChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['A 승리', 'B 승리', '무승부'],
+                        datasets: [{
+                            data: [winA, winB, ties],
+                            backgroundColor: ['rgba(59, 130, 246, 0.6)', 'rgba(99, 102, 241, 0.6)', 'rgba(156, 163, 175, 0.6)']
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        plugins: { legend: { position: 'right' } }
+                    }
+                });
+            }
+        }
+
+        document.getElementById('singleForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const res = await postData('/api/evaluate-single', formData);
+            if (res) {
+                document.getElementById('singleResult').classList.remove('hidden');
+                document.getElementById('singleJSONArea').classList.add('hidden'); // Reset JSON view
+                document.getElementById('resCriterion').innerText = res.criterion;
+                document.getElementById('resScore').innerText = `${res.score} / ${res.max_score}`;
+                document.getElementById('resReasoning').innerText = res.reasoning;
+
+                // Reset feedback buttons
+                document.getElementById('btnSingleAgree').className = 'text-xs px-2 py-1 rounded hover:bg-green-100 transition';
+                document.getElementById('btnSingleDisagree').className = 'text-xs px-2 py-1 rounded hover:bg-red-100 transition';
+
+                // Store data for export
+                currentSingleData = {
+                    type: "absolute_scoring",
+                    model: formData.get('model'),
+                    rubric: formData.get('rubric_name'),
+                    context: formData.get('context') || null,
+                    prompt: formData.get('prompt'),
+                    response: formData.get('response'),
+                    reference: formData.get('reference') || null,
+                    result: {
+                        score: res.score,
+                        max_score: res.max_score,
+                        reasoning: res.reasoning,
+                        criterion: res.criterion
+                    },
+                    human_feedback: null
+                };
+            }
+        };
+
+        document.getElementById('pairwiseForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const res = await postData('/api/compare', formData);
+            if (res) {
+                document.getElementById('pairwiseResult').classList.remove('hidden');
+                document.getElementById('pairwiseJSONArea').classList.add('hidden'); // Reset JSON view
+
+                // Display results
+                document.getElementById('resWinner').innerText = res.winner || "Unknown";
+                document.getElementById('resScoreA').innerText = res.score_a !== undefined ? res.score_a : "0";
+                document.getElementById('resScoreB').innerText = res.score_b !== undefined ? res.score_b : "0";
+                document.getElementById('resPairReasoning').innerText = res.reasoning || "No reasoning.";
+
+                // Reset feedback buttons
+                document.getElementById('btnPairwiseAgree').className = 'text-xs px-2 py-1 rounded hover:bg-green-100 transition';
+                document.getElementById('btnPairwiseDisagree').className = 'text-xs px-2 py-1 rounded hover:bg-red-100 transition';
+
+                // Store data for export
+                currentPairwiseData = {
+                    type: "pairwise_comparison",
+                    model: formData.get('model'),
+                    context: formData.get('context') || null,
+                    prompt: formData.get('prompt'),
+                    response_a: formData.get('response_a'),
+                    response_b: formData.get('response_b'),
+                    reference: formData.get('reference') || null,
+                    result: {
+                        winner: res.winner,
+                        score_a: res.score_a,
+                        score_b: res.score_b,
+                        max_score: res.max_score || 5,
+                        reasoning: res.reasoning
+                    },
+                    human_feedback: null
+                };
+            }
+        };
+
+        function exportSingleJSON() {
+            if (!currentSingleData) return;
+            const area = document.getElementById('singleJSONArea');
+            const pre = document.getElementById('singleJSONText');
+            pre.innerText = JSON.stringify(currentSingleData, null, 2);
+            area.classList.remove('hidden');
+        }
+
+        function exportPairwiseJSON() {
+            if (!currentPairwiseData) return;
+            const area = document.getElementById('pairwiseJSONArea');
+            const pre = document.getElementById('pairwiseJSONText');
+            pre.innerText = JSON.stringify(currentPairwiseData, null, 2);
+            area.classList.remove('hidden');
+        }
+
+        async function copyToClipboard(elementId) {
+            const text = document.getElementById(elementId).innerText;
+            try {
+                await navigator.clipboard.writeText(text);
+                alert('JSON이 클립보드에 복사되었습니다!');
+            } catch (err) {
+                alert('복사 실패: ' + err);
+            }
+        }
+
+        document.getElementById('batchForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const res = await postData('/api/evaluate-batch', new FormData(e.target));
+            if (res) {
+                document.getElementById('batchResult').classList.remove('hidden');
+                document.getElementById('batchMsg').innerText = res.message;
+
+                // Store results for download
+                currentBatchData = res.all_results;
+
+                // Update stats and chart
+                updateBatchStats(currentBatchData);
+
+                // Setup download buttons
+                document.getElementById('btnDownloadBatch').onclick = () => {
+                    downloadJSON(currentBatchData, "evaluation_batch_results.json");
+                };
+                document.getElementById('btnCopyBatch').onclick = () => {
+                    const jsonStr = JSON.stringify(currentBatchData, null, 2);
+                    navigator.clipboard.writeText(jsonStr).then(() => alert('전체 결과가 클립보드에 복사되었습니다!'));
+                };
+
+                // Simple table preview
+                if (res.samples && res.samples.length > 0) {
+                    let html = '<table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr>';
+                    // Show common and specific columns
+                    const first = res.samples[0];
+                    Object.keys(first).forEach(k => {
+                        if (!['reasoning'].includes(k)) { // Skip long reasoning in preview table
+                            html += `<th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">${k}</th>`;
+                        }
+                    });
+                    html += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
+                    res.samples.forEach(row => {
+                        html += '<tr>';
+                        Object.entries(row).forEach(([k, v]) => {
+                            if (!['reasoning'].includes(k)) {
+                                const displayVal = (typeof v === 'string' && v.length > 100) ? v.substring(0, 100) + '...' : v;
+                                html += `<td class="px-4 py-3 text-sm text-gray-600 truncate max-w-xs" title="${v}">${displayVal}</td>`;
+                            }
+                        });
+                        html += '</tr>';
+                    });
+                    html += '</tbody></table>';
+                    document.getElementById('batchTable').innerHTML = html;
+                }
+            }
+        };
+
+        function downloadJSON(data, filename) {
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    </script>
+</body>
+
+</html>

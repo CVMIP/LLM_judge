@@ -1,0 +1,4 @@
+prompt,response,reference_answer
+"Explain Python to a beginner.","Python is a user-friendly programming language.","Python is a high-level, interpreted programming language known for readability."
+"Capital of South Korea?","The capital of South Korea is Seoul.","The capital is Seoul."
+"What is AI?","AI is artificial intelligence.","Artificial intelligence (AI) is the simulation of human intelligence in machines."

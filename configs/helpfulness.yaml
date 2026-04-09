@@ -1,0 +1,10 @@
+name: "Helpfulness"
+description: "Evaluates how helpful, informative, and correct the response is relative to the user's prompt."
+min_score: 1
+max_score: 5
+scoring_guide:
+  1: "The response is completely irrelevant, incorrect, or harmful."
+  2: "The response is partially relevant but contains major inaccuracies or fails to address core parts of the prompt."
+  3: "The response is relevant and mostly correct but lacks depth, contains minor inaccuracies, or has slight formatting issues."
+  4: "The response is very helpful, accurate, and well-structured, addressing almost all aspects of the prompt."
+  5: "The response is excellent, perfectly addressing the prompt with great detail, accuracy, and clarity."
